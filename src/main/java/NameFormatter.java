@@ -9,13 +9,15 @@ import net.luckperms.api.LuckPerms;
 import net.luckperms.api.cacheddata.CachedMetaData;
 import net.luckperms.api.model.user.UserManager;
 
+import java.util.Optional;
+
 public class NameFormatter {
     private final MiniMessage miniMessage;
     private final UserManager userManager;
 
     public NameFormatter(UserManager userManager) {
-        this.miniMessage = MiniMessage.miniMessage();
         this.userManager = userManager;
+        this.miniMessage = MiniMessage.miniMessage();
     }
 
     public Component formatUsername(Player player, String serverName) {
@@ -25,8 +27,10 @@ public class NameFormatter {
                 TagResolver.builder()
                         .resolver(Placeholder.unparsed("player", player.getUsername()))
                         .resolver(Placeholder.unparsed("server", serverName))
-                        .resolver(Placeholder.parsed("luckperms_prefix", metaData.getPrefix()))
-                        .resolver(Placeholder.parsed("luckperms_suffix", metaData.getSuffix()))
+                        .resolver(Placeholder.parsed("luckperms_prefix",
+                                Optional.ofNullable(metaData.getPrefix()).orElse("")))
+                        .resolver(Placeholder.parsed("luckperms_suffix",
+                                Optional.ofNullable(metaData.getSuffix()).orElse("")))
                         .build()
         );
     }
