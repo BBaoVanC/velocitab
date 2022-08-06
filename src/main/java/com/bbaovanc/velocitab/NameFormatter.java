@@ -29,8 +29,8 @@ public class NameFormatter {
         return miniMessage.deserialize(
                 Config.template,
                 TagResolver.builder()
-                        .resolver(Placeholder.unparsed("player", player.getUsername()))
-                        .resolver(Placeholder.unparsed("server", serverName))
+                        .resolver(Placeholder.unparsed("username", player.getUsername()))
+                        .resolver(Placeholder.unparsed("current_server", serverName))
                         .resolver(Placeholder.parsed("luckperms_prefix",
                                 Optional.ofNullable(metaData.getPrefix()).orElse("")))
                         .resolver(Placeholder.parsed("luckperms_suffix",
