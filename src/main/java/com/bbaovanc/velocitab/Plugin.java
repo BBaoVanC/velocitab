@@ -1,3 +1,5 @@
+package com.bbaovanc.velocitab;
+
 import com.google.inject.Inject;
 import com.velocitypowered.api.event.EventManager;
 import com.velocitypowered.api.event.Subscribe;
