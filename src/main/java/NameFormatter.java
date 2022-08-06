@@ -7,6 +7,7 @@ import net.kyori.adventure.text.minimessage.tag.resolver.Placeholder;
 import net.kyori.adventure.text.minimessage.tag.resolver.TagResolver;
 import net.luckperms.api.LuckPerms;
 import net.luckperms.api.cacheddata.CachedMetaData;
+import net.luckperms.api.model.user.User;
 import net.luckperms.api.model.user.UserManager;
 
 import java.util.Optional;
@@ -21,7 +22,11 @@ public class NameFormatter {
     }
 
     public Component formatUsername(Player player, String serverName) {
-        CachedMetaData metaData = userManager.getUser(player.getUniqueId()).getCachedData().getMetaData();
+        User lpUser = userManager.getUser(player.getUniqueId());
+        if (lpUser == null) {
+            return Component.text(player.getUsername());
+        }
+        CachedMetaData metaData = lpUser.getCachedData().getMetaData();
         return miniMessage.deserialize(
                 Config.template,
                 TagResolver.builder()
