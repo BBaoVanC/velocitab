@@ -27,10 +27,8 @@ public class Util {
                                         .builder()
                                         .tabList(tabList)
                                         .profile(p.getGameProfile())
-                                        .displayName(Component.text("dasjkfkjadsf"))
                                         .build())
-                                .setGameMode(3));
-//                                .setDisplayName(Component.text("abc")));
+                                .setDisplayName(nameFormatter.formatUsername(p, p.getCurrentServer().get().getServerInfo().getName())));
             });
 
             tabList.addEntry(
