@@ -1,6 +1,5 @@
 package com.bbaovanc.velocitab;
 
-import com.google.common.base.Preconditions;
 import com.google.inject.Inject;
 import com.velocitypowered.api.event.Subscribe;
 import com.velocitypowered.api.event.connection.DisconnectEvent;
@@ -18,12 +17,8 @@ import net.kyori.adventure.text.minimessage.tag.resolver.TagResolver;
 import net.luckperms.api.LuckPerms;
 import net.luckperms.api.LuckPermsProvider;
 import net.luckperms.api.cacheddata.CachedMetaData;
-import net.luckperms.api.event.EventBus;
-import net.luckperms.api.event.group.GroupDataRecalculateEvent;
-import net.luckperms.api.event.user.UserDataRecalculateEvent;
 import net.luckperms.api.model.user.User;
 import net.luckperms.api.model.user.UserManager;
-import net.luckperms.api.node.types.InheritanceNode;
 import org.slf4j.Logger;
 
 import java.time.Duration;
