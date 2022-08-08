@@ -59,113 +59,68 @@ public class Plugin {
         luckPerms = LuckPermsProvider.get();
         lpUserManager = luckPerms.getUserManager();
 
-        EventBus eventBus = luckPerms.getEventBus();
-        eventBus.subscribe(this, GroupDataRecalculateEvent.class, this::onLuckPermsGroupDataRecalculate);
-        eventBus.subscribe(this, UserDataRecalculateEvent.class, this::onLuckPermsUserDataRecalculate);
+        // EventBus eventBus = luckPerms.getEventBus();
+        // eventBus.subscribe(this, GroupDataRecalculateEvent.class, this::onLuckPermsGroupDataRecalculate);
+        // eventBus.subscribe(this, UserDataRecalculateEvent.class, this::onLuckPermsUserDataRecalculate);
 
         // Refresh header and footer every so often since ping may change
-        server.getScheduler().buildTask(this, this::updateEverythingForEveryone)
+        server.getScheduler().buildTask(this, this::update)
                 .repeat(Duration.ofSeconds(15))
                 .schedule();
     }
 
-    public void onLuckPermsGroupDataRecalculate(GroupDataRecalculateEvent event) {
-        server.getAllPlayers()
-                .stream()
-                .filter(p -> {
-                    User user = lpUserManager.getUser(p.getUniqueId());
-                    if (user == null) {
-                        return false;
-                    }
-                    return user.getNodes().contains(InheritanceNode.builder().group(event.getGroup()).build());
-                })
-                .forEach(this::updateTargetInAllLists);
-    }
+    // public void onLuckPermsGroupDataRecalculate(GroupDataRecalculateEvent event) {
+    //     update();
+    // }
 
-    public void onLuckPermsUserDataRecalculate(UserDataRecalculateEvent event) {
-        server.getPlayer(event.getUser().getUniqueId()).ifPresent(this::updateTargetInAllLists);
-    }
+    // public void onLuckPermsUserDataRecalculate(UserDataRecalculateEvent event) {
+    //     update();
+    // }
 
     @Subscribe
     public void onJoin(ServerPostConnectEvent event) {
-        server.getScheduler().buildTask(this, () -> {
-            Player target = event.getPlayer();
-            updateEntireList(target);
-            updateTargetInAllLists(target);
-        }).delay(Duration.ofMillis(1000)).schedule();
-        refreshAllHeaderFooters();
+        server.getScheduler().buildTask(this, this::update)
+                .delay(Duration.ofMillis(1000)).schedule();
     }
 
     public void onLeave(DisconnectEvent event) {
-        refreshAllHeaderFooters();
+        update();
         removeTargetFromAllLists(event.getPlayer());
-    }
-
-    private void updatePlayerList(Player player) {
-        TabList tabList = player.getTabList();
-        server.getAllPlayers().forEach(target -> {
-            tabList.removeEntry(target.getUniqueId()).ifPresentOrElse(
-                    e -> {
-                        tabList.addEntry(
-                                e.setDisplayName(
-                                        miniMessage.deserialize(
-                                                Config.DISPLAY_NAME_FORMAT,
-                                                TagResolver.builder()
-                                                        .resolver(defaultTagResolver(target))
-                                                        .build()
-                                        )
-                                )
-                        );
-                    },
-                    () -> tabList.addEntry(
-                            TabListEntry.builder()
-                                    .tabList(tabList)
-                                    .profile(target.getGameProfile())
-                                    .playerKey(target.getIdentifiedKey())
-                                    .latency((int) target.getPing())
-                                    .gameMode(0) // proxy does not know gamemode so default to survival
-                                    .displayName(miniMessage.deserialize(
-                                            Config.DISPLAY_NAME_FORMAT,
-                                            TagResolver.builder()
-                                                    .resolver(defaultTagResolver(target))
-                                                    .build()
-                                    ))
-                                    .build()
-                    )
-            );
-        });
-    }
-
-    private void updateEverythingForEveryone() {
-        server.getAllPlayers().forEach(this::updateEntireList);
-        refreshAllHeaderFooters();
     }
 
     private void removeTargetFromAllLists(Player target) {
         server.getAllPlayers().forEach(onlinePlayer -> onlinePlayer.getTabList().removeEntry(target.getUniqueId()));
     }
 
-    private void updateEntireList(Player player) {
-        server.getAllPlayers().forEach(onlinePlayer -> updateTargetForPlayer(onlinePlayer, player));
-    }
+    private void update() {
+        server.getAllPlayers().forEach(onlinePlayer -> {
+            TagResolver tagResolver = defaultTagResolver(onlinePlayer);
+            onlinePlayer.sendPlayerListHeaderAndFooter(
+                    miniMessage.deserialize(Config.HEADER_FORMAT, tagResolver),
+                    miniMessage.deserialize(Config.FOOTER_FORMAT, tagResolver)
+            );
 
-    private void updateTargetInAllLists(Player target) {
-        server.getAllPlayers().forEach(onlinePlayer -> updateTargetForPlayer(target, onlinePlayer));
+            TabList tabList = onlinePlayer.getTabList();
+            server.getAllPlayers().forEach(target -> tabList.addEntry(
+                    tabList.removeEntry(target.getUniqueId()).orElse(
+                            TabListEntry.builder()
+                                    .tabList(tabList)
+                                    .profile(target.getGameProfile())
+                                    .playerKey(target.getIdentifiedKey())
+                                    .latency((int) target.getPing())
+                                    .gameMode(0) // proxy does not know gamemode so default to survival
+                                    .build()
+                    ).setDisplayName(
+                            miniMessage.deserialize(
+                                    Config.DISPLAY_NAME_FORMAT,
+                                    defaultTagResolver(target)
+                            )
+                    )
+            ));
+        });
     }
 
     public TagResolver defaultTagResolver(Player target) {
-//        TagResolver luckPermsResolver;
-//        if (luckPermsMetaData != null) {
-//            luckPermsResolver = TagResolver.builder()
-//                    .resolver(Placeholder.parsed("luckperms_prefix",
-//                            Optional.ofNullable(luckPermsMetaData.getPrefix()).orElse("")))
-//                    .resolver(Placeholder.parsed("luckperms_suffix",
-//                            Optional.ofNullable(luckPermsMetaData.getSuffix()).orElse("")))
-//                    .build();
-//        } else {
-//            luckPermsResolver = TagResolver.empty();
-//        }
-
         Optional<ServerConnection> serverConnection = target.getCurrentServer();
         String serverName = "null";
         if (serverConnection.isPresent()) {
@@ -189,52 +144,5 @@ public class Plugin {
                 .resolver(Placeholder.unparsed("ping", String.valueOf(target.getPing())))
                 .resolver(luckPermsResolver)
                 .build();
-    }
-
-    private void updateTargetForPlayer(Player target, Player player) {
-        TabList tabList = player.getTabList();
-        tabList.removeEntry(
-                target.getUniqueId()
-        ).ifPresentOrElse(
-                e -> {
-                    tabList.addEntry(
-                            e.setDisplayName(
-                                    miniMessage.deserialize(
-                                            Config.DISPLAY_NAME_FORMAT,
-                                            TagResolver.builder()
-                                                    .resolver(defaultTagResolver(target))
-                                                    .build()
-                                    )
-                            )
-                    );
-                },
-                () -> tabList.addEntry(
-                        TabListEntry.builder()
-                                .tabList(tabList)
-                                .profile(target.getGameProfile())
-                                .playerKey(target.getIdentifiedKey())
-                                .latency((int) target.getPing())
-                                .gameMode(0) // proxy does not know gamemode so default to survival
-                                .displayName(miniMessage.deserialize(
-                                        Config.DISPLAY_NAME_FORMAT,
-                                        TagResolver.builder()
-                                                .resolver(defaultTagResolver(target))
-                                                .build()
-                                ))
-                                .build()
-                )
-        );
-    }
-
-    private void refreshAllHeaderFooters() {
-        server.getAllPlayers().forEach(this::refreshHeaderFooter);
-    }
-
-    private void refreshHeaderFooter(Player target) {
-        TagResolver tagResolver = defaultTagResolver(target);
-        target.sendPlayerListHeaderAndFooter(
-                miniMessage.deserialize(Config.HEADER_FORMAT, tagResolver),
-                miniMessage.deserialize(Config.FOOTER_FORMAT, tagResolver)
-        );
     }
 }
