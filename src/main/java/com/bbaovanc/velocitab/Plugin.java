@@ -1,5 +1,6 @@
 package com.bbaovanc.velocitab;
 
+import com.google.common.base.Preconditions;
 import com.google.inject.Inject;
 import com.velocitypowered.api.event.Subscribe;
 import com.velocitypowered.api.event.connection.DisconnectEvent;
@@ -10,7 +11,9 @@ import com.velocitypowered.api.proxy.Player;
 import com.velocitypowered.api.proxy.ProxyServer;
 import com.velocitypowered.api.proxy.ServerConnection;
 import com.velocitypowered.api.proxy.player.TabList;
+import com.velocitypowered.api.proxy.player.TabListEntry;
 import net.kyori.adventure.text.minimessage.MiniMessage;
+import net.kyori.adventure.text.minimessage.tag.resolver.Placeholder;
 import net.kyori.adventure.text.minimessage.tag.resolver.TagResolver;
 import net.luckperms.api.LuckPerms;
 import net.luckperms.api.LuckPermsProvider;
@@ -25,8 +28,6 @@ import org.slf4j.Logger;
 
 import java.time.Duration;
 import java.util.Optional;
-import java.util.UUID;
-import java.util.stream.Collectors;
 
 @com.velocitypowered.api.plugin.Plugin(
         id = "velocitab",
@@ -45,7 +46,6 @@ public class Plugin {
     private final MiniMessage miniMessage;
     private LuckPerms luckPerms;
     private UserManager lpUserManager;
-    private NameFormatter nameFormatter;
 
     @Inject
     public Plugin(ProxyServer server, Logger logger) {
@@ -58,16 +58,15 @@ public class Plugin {
     public void onProxyInitialize(ProxyInitializeEvent event) {
         luckPerms = LuckPermsProvider.get();
         lpUserManager = luckPerms.getUserManager();
-        nameFormatter = new NameFormatter(lpUserManager, miniMessage);
 
         EventBus eventBus = luckPerms.getEventBus();
         eventBus.subscribe(this, GroupDataRecalculateEvent.class, this::onLuckPermsGroupDataRecalculate);
         eventBus.subscribe(this, UserDataRecalculateEvent.class, this::onLuckPermsUserDataRecalculate);
 
-        // TODO: Refresh header and footer every so often since ping may change
-        // can't run getAllPlayers() since no one is online when the initialization happens
-//        server.getScheduler().buildTask(this, () -> server.getAllPlayers().forEach(this::refreshHeaderFooter))
-//                .delay(Duration.ofSeconds(30)).repeat(30).schedule();
+        // Refresh header and footer every so often since ping may change
+        server.getScheduler().buildTask(this, this::updateEverythingForEveryone)
+                .repeat(Duration.ofSeconds(15))
+                .schedule();
     }
 
     public void onLuckPermsGroupDataRecalculate(GroupDataRecalculateEvent event) {
@@ -91,68 +90,148 @@ public class Plugin {
     public void onJoin(ServerPostConnectEvent event) {
         server.getScheduler().buildTask(this, () -> {
             Player target = event.getPlayer();
-            updateEntireList(target.getTabList());
+            updateEntireList(target);
             updateTargetInAllLists(target);
-            refreshHeaderFooter(target);
         }).delay(Duration.ofMillis(1000)).schedule();
+        refreshAllHeaderFooters();
     }
 
     public void onLeave(DisconnectEvent event) {
-        refreshHeaderFooter(event.getPlayer());
+        refreshAllHeaderFooters();
+        removeTargetFromAllLists(event.getPlayer());
     }
 
-    private void updateEntireList(TabList tabList) {
-        server.getAllPlayers().forEach(onlinePlayer -> updateTargetInList(onlinePlayer, tabList));
+    private void updatePlayerList(Player player) {
+        TabList tabList = player.getTabList();
+        server.getAllPlayers().forEach(target -> {
+            tabList.removeEntry(target.getUniqueId()).ifPresentOrElse(
+                    e -> {
+                        tabList.addEntry(
+                                e.setDisplayName(
+                                        miniMessage.deserialize(
+                                                Config.DISPLAY_NAME_FORMAT,
+                                                TagResolver.builder()
+                                                        .resolver(defaultTagResolver(target))
+                                                        .build()
+                                        )
+                                )
+                        );
+                    },
+                    () -> tabList.addEntry(
+                            TabListEntry.builder()
+                                    .tabList(tabList)
+                                    .profile(target.getGameProfile())
+                                    .playerKey(target.getIdentifiedKey())
+                                    .latency((int) target.getPing())
+                                    .gameMode(0) // proxy does not know gamemode so default to survival
+                                    .displayName(miniMessage.deserialize(
+                                            Config.DISPLAY_NAME_FORMAT,
+                                            TagResolver.builder()
+                                                    .resolver(defaultTagResolver(target))
+                                                    .build()
+                                    ))
+                                    .build()
+                    )
+            );
+        });
+    }
+
+    private void updateEverythingForEveryone() {
+        server.getAllPlayers().forEach(this::updateEntireList);
+        refreshAllHeaderFooters();
+    }
+
+    private void removeTargetFromAllLists(Player target) {
+        server.getAllPlayers().forEach(onlinePlayer -> onlinePlayer.getTabList().removeEntry(target.getUniqueId()));
+    }
+
+    private void updateEntireList(Player player) {
+        server.getAllPlayers().forEach(onlinePlayer -> updateTargetForPlayer(onlinePlayer, player));
     }
 
     private void updateTargetInAllLists(Player target) {
-        server.getAllPlayers().forEach(onlinePlayer -> updateTargetInList(target, onlinePlayer.getTabList()));
+        server.getAllPlayers().forEach(onlinePlayer -> updateTargetForPlayer(target, onlinePlayer));
     }
 
-    private void updateTargetInList(Player target, TabList tabList) {
+    public TagResolver defaultTagResolver(Player target) {
+//        TagResolver luckPermsResolver;
+//        if (luckPermsMetaData != null) {
+//            luckPermsResolver = TagResolver.builder()
+//                    .resolver(Placeholder.parsed("luckperms_prefix",
+//                            Optional.ofNullable(luckPermsMetaData.getPrefix()).orElse("")))
+//                    .resolver(Placeholder.parsed("luckperms_suffix",
+//                            Optional.ofNullable(luckPermsMetaData.getSuffix()).orElse("")))
+//                    .build();
+//        } else {
+//            luckPermsResolver = TagResolver.empty();
+//        }
+
+        Optional<ServerConnection> serverConnection = target.getCurrentServer();
+        String serverName = "null";
+        if (serverConnection.isPresent()) {
+            serverName = serverConnection.get().getServerInfo().getName();
+        }
+
+        User user = lpUserManager.getUser(target.getUniqueId());
+        TagResolver luckPermsResolver = TagResolver.empty();
+        if (user != null) {
+            CachedMetaData cachedMetaData = user.getCachedData().getMetaData();
+            luckPermsResolver = TagResolver.builder()
+                    .resolver(Placeholder.parsed("luckperms_prefix", Optional.ofNullable(cachedMetaData.getPrefix()).orElse("")))
+                    .resolver(Placeholder.parsed("luckperms_suffix", Optional.ofNullable(cachedMetaData.getSuffix()).orElse("")))
+                    .build();
+        }
+
+        return TagResolver.builder()
+                .resolver(Placeholder.unparsed("username", target.getUsername()))
+                .resolver(Placeholder.unparsed("server", serverName))
+                .resolver(Placeholder.unparsed("online_count", String.valueOf(server.getPlayerCount())))
+                .resolver(Placeholder.unparsed("ping", String.valueOf(target.getPing())))
+                .resolver(luckPermsResolver)
+                .build();
+    }
+
+    private void updateTargetForPlayer(Player target, Player player) {
+        TabList tabList = player.getTabList();
         tabList.removeEntry(
                 target.getUniqueId()
-        ).ifPresent(
+        ).ifPresentOrElse(
                 e -> {
-                    Optional<ServerConnection> targetServer = target.getCurrentServer();
-                    targetServer.ifPresentOrElse(
-                            serverConnection -> tabList.addEntry(
-                                    e.setDisplayName(nameFormatter.formatUsername(
-                                            target,
-                                            serverConnection.getServerInfo().getName())
+                    tabList.addEntry(
+                            e.setDisplayName(
+                                    miniMessage.deserialize(
+                                            Config.DISPLAY_NAME_FORMAT,
+                                            TagResolver.builder()
+                                                    .resolver(defaultTagResolver(target))
+                                                    .build()
                                     )
-                            ),
-                            () -> tabList.addEntry(
-                                    // TODO: replace this with a log warning, this should be impossible
-                                    e.setDisplayName(nameFormatter.formatUsername(
-                                            target,
-                                            "null"
-                                    ))
                             )
                     );
-                }
+                },
+                () -> tabList.addEntry(
+                        TabListEntry.builder()
+                                .tabList(tabList)
+                                .profile(target.getGameProfile())
+                                .playerKey(target.getIdentifiedKey())
+                                .latency((int) target.getPing())
+                                .gameMode(0) // proxy does not know gamemode so default to survival
+                                .displayName(miniMessage.deserialize(
+                                        Config.DISPLAY_NAME_FORMAT,
+                                        TagResolver.builder()
+                                                .resolver(defaultTagResolver(target))
+                                                .build()
+                                ))
+                                .build()
+                )
         );
+    }
+
+    private void refreshAllHeaderFooters() {
+        server.getAllPlayers().forEach(this::refreshHeaderFooter);
     }
 
     private void refreshHeaderFooter(Player target) {
-        Optional<ServerConnection> serverConnection = target.getCurrentServer();
-        String serverName;
-        if (serverConnection.isPresent()) {
-            serverName = serverConnection.get().getServerInfo().getName();
-        } else {
-            // TODO: replace this with a log warning, this should be impossible
-            serverName = "null";
-        }
-
-        CachedMetaData cachedMetaData = null;
-        User user = lpUserManager.getUser(target.getUniqueId());
-        if (user != null) {
-            cachedMetaData = user.getCachedData().getMetaData();
-        }
-
-        TagResolver tagResolver = nameFormatter.makePlaceholders(
-                target.getUsername(), serverName, cachedMetaData, server.getPlayerCount(), target.getPing()
-        );
+        TagResolver tagResolver = defaultTagResolver(target);
         target.sendPlayerListHeaderAndFooter(
                 miniMessage.deserialize(Config.HEADER_FORMAT, tagResolver),
                 miniMessage.deserialize(Config.FOOTER_FORMAT, tagResolver)
