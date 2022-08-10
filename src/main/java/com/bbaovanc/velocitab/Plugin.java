@@ -75,19 +75,15 @@ public class Plugin {
     @Subscribe
     public void onJoin(ServerPostConnectEvent event) {
         server.getScheduler().buildTask(this, this::update)
-                .delay(Duration.ofMillis(1000)).schedule();
+                .delay(Duration.ofMillis(1000))
+                .schedule();
     }
 
     public void onLeave(DisconnectEvent event) {
         update();
-        removeTargetFromAllLists(event.getPlayer());
     }
 
-    private void removeTargetFromAllLists(Player target) {
-        server.getAllPlayers().forEach(onlinePlayer -> onlinePlayer.getTabList().removeEntry(target.getUniqueId()));
-    }
-
-    private void update() {
+    private synchronized void update() {
         server.getAllPlayers().forEach(onlinePlayer -> {
             TagResolver tagResolver = defaultTagResolver(onlinePlayer);
             onlinePlayer.sendPlayerListHeaderAndFooter(
@@ -96,8 +92,16 @@ public class Plugin {
             );
 
             TabList tabList = onlinePlayer.getTabList();
+
+            // remove all players that aren't online
+            tabList.getEntries().stream()
+                    .filter(e -> server.getPlayer(e.getProfile().getId()).isEmpty())
+                    .forEach(e -> tabList.removeEntry(e.getProfile().getId()));
+
+            // update display name of every player on the proxy
             server.getAllPlayers().forEach(target -> tabList.addEntry(
                     tabList.removeEntry(target.getUniqueId()).orElse(
+                            // build tab list entry for player on a different server
                             TabListEntry.builder()
                                     .tabList(tabList)
                                     .profile(target.getGameProfile())
