@@ -30,7 +30,7 @@ import java.util.Optional;
         authors = {"bbaovanc"},
         description = "Simple tab list plugin for Velocity",
         url = "https://github.com/BBaoVanC/velocitab",
-        version = "1.0.1",
+        version = "1.0.2",
         dependencies = {
                 @Dependency(id = "luckperms")
         }
