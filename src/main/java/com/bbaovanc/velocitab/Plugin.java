@@ -105,7 +105,6 @@ public class Plugin {
                             TabListEntry.builder()
                                     .tabList(tabList)
                                     .profile(target.getGameProfile())
-                                    .playerKey(target.getIdentifiedKey())
                                     .latency((int) target.getPing())
                                     .gameMode(0) // proxy does not know gamemode so default to survival
                                     .build()
